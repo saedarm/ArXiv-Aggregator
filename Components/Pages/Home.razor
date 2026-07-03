@@ -1,0 +1,110 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using PaperAggro.Data
+@using PaperAggro.Models
+@using PaperAggro.Services
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject CollectorService Collector
+
+<PageTitle>PaperAggro</PageTitle>
+
+<div class="toolbar">
+    <input @bind="search" @bind:event="oninput"
+           @bind:after="LoadArticles"
+           placeholder="Search titles and summaries" />
+    <button @onclick="CollectNow" disabled="@collecting">
+        @(collecting ? "Collecting…" : "Collect now")
+    </button>
+</div>
+
+<nav class="tabs">
+    @foreach (var tab in Tabs)
+    {
+        <button class="@(tab == activeTab ? "active" : "")"
+                @onclick="() => SetTab(tab)">@tab</button>
+    }
+</nav>
+
+@if (articles is null)
+{
+    <p class="muted">Loading…</p>
+}
+else if (articles.Count == 0)
+{
+    <p class="muted">No articles yet — hit "Collect now" to run your first crawl.</p>
+}
+else
+{
+    @foreach (var a in articles)
+    {
+        <article class="card @(a.DeepDive ? "deep-dive" : "")">
+            <h3>
+                <a href="@a.Link" target="_blank">@a.Title</a>
+                @if (a.PdfLink is not null)
+                {
+                    <a class="pdf" href="@a.PdfLink" target="_blank">PDF</a>
+                }
+            </h3>
+            <p class="meta">@a.SourceName · @a.PublishedAt.ToString("MMM d, yyyy") · @a.Category</p>
+            @if (a.AiSummary is not null)
+            {
+                <p class="summary">@a.AiSummary</p>
+            }
+            else
+            {
+                <p>@a.Description</p>
+            }
+            <div class="tags">
+                @foreach (var tag in a.Tags)
+                {
+                    <span class="tag">@tag</span>
+                }
+            </div>
+        </article>
+    }
+}
+
+@code {
+    private static readonly string[] Tabs =
+    [
+        "All", "OpenAI", "Anthropic / Claude", "Google / Gemini",
+        "Research Papers", "RAG & Retrieval", "Agents & Agentic", "General AI"
+    ];
+
+    private string activeTab = "All";
+    private string search = "";
+    private bool collecting;
+    private List<Article>? articles;
+
+    protected override Task OnInitializedAsync() => LoadArticles();
+
+    private async Task LoadArticles()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        IQueryable<Article> q = db.Articles.OrderByDescending(a => a.PublishedAt);
+
+        if (activeTab != "All")
+            q = q.Where(a => a.Category == activeTab);
+
+        if (!string.IsNullOrWhiteSpace(search))
+            q = q.Where(a => a.Title.Contains(search)
+                          || a.Description.Contains(search));
+
+        articles = await q.Take(50).ToListAsync();
+    }
+
+    private async Task SetTab(string tab)
+    {
+        activeTab = tab;
+        await LoadArticles();
+    }
+
+    private async Task CollectNow()
+    {
+        collecting = true;
+        await Collector.CollectAsync();
+        collecting = false;
+        await LoadArticles();
+    }
+}

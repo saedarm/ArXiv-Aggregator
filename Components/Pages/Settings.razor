@@ -1,0 +1,190 @@
+﻿@page "/settings"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using PaperAggro.Data
+@using PaperAggro.Models
+@using PaperAggro.Services
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject CollectorService Collector
+@inject DigestService Digest
+
+<PageTitle>Settings</PageTitle>
+
+<h1>Settings</h1>
+
+@if (settings is null || feeds is null)
+{
+    <p class="muted">Loading…</p>
+    return;
+}
+
+<section class="card">
+    <h2>Schedule</h2>
+    <div class="form-row">
+        <label>Collect every</label>
+        <select @bind="settings.CollectHours">
+            @foreach (var h in new[] { 1, 2, 4, 6, 12, 24 })
+            {
+                <option value="@h">@h hours</option>
+            }
+        </select>
+    </div>
+    <div class="form-row">
+        <label><input type="checkbox" @bind="settings.DailyDigestEnabled" /> Daily digest at</label>
+        <input type="time" @bind="dailyTime" />
+    </div>
+    <div class="form-row">
+        <label><input type="checkbox" @bind="settings.WeeklyDigestEnabled" /> Weekly digest on</label>
+        <select @bind="settings.WeeklyDigestDay">
+            @foreach (var d in Enum.GetValues<DayOfWeek>())
+            {
+                <option value="@d">@d</option>
+            }
+        </select>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Email (SMTP)</h2>
+    <div class="form-row"><label>Host</label><input @bind="settings.SmtpHost" /></div>
+    <div class="form-row"><label>Port</label><input type="number" @bind="settings.SmtpPort" /></div>
+    <div class="form-row"><label>User</label><input @bind="settings.SmtpUser" placeholder="you@gmail.com" /></div>
+    <p class="muted">Password comes from the SMTP_PASSWORD environment variable and is never stored in the database.</p>
+    <div class="form-row">
+        <button @onclick="SendTest" disabled="@testing">
+            @(testing ? "Sending…" : "Send test digest")
+        </button>
+        @if (testResult is not null)
+        {
+            <span class="muted">@testResult</span>
+        }
+    </div>
+</section>
+
+<button class="primary" @onclick="SaveSettings">Save settings</button>
+@if (saved) { <span class="muted"> Saved.</span> }
+
+<section class="card">
+    <h2>Sources</h2>
+    <table class="feed-table">
+        <thead>
+            <tr><th>On</th><th>Name</th><th>Type</th><th>Last run</th><th>New</th><th></th></tr>
+        </thead>
+        <tbody>
+        @foreach (var f in feeds)
+        {
+            <tr class="@(f.LastError is null ? "" : "feed-error")">
+                <td><input type="checkbox" @bind="f.Enabled" @bind:after="() => SaveFeed(f)" /></td>
+                <td>
+                    @f.Name
+                    @if (f.LastError is not null)
+                    {
+                        <div class="muted small">@f.LastError</div>
+                    }
+                </td>
+                <td>@f.Type</td>
+                <td>@(f.LastCollectedAt?.ToLocalTime().ToString("MMM d HH:mm") ?? "never")</td>
+                <td>@f.LastCollectedCount</td>
+                <td><button @onclick="() => DeleteFeed(f)">Remove</button></td>
+            </tr>
+        }
+        </tbody>
+    </table>
+
+    <h3>Add source</h3>
+    <div class="form-row">
+        <input @bind="newName" placeholder="Name" />
+        <input @bind="newUrl" placeholder="https://example.com/feed.xml" style="flex:2" />
+        <select @bind="newType">
+            <option value="rss">RSS / Atom</option>
+            <option value="arxiv">arXiv API</option>
+        </select>
+        <button @onclick="AddFeed">Add</button>
+    </div>
+    @if (feedMessage is not null) { <p class="muted">@feedMessage</p> }
+</section>
+
+@code {
+    private AppSettings? settings;
+    private List<FeedSourceEntity>? feeds;
+    private DateTime dailyTime;
+    private bool saved;
+    private string newName = "", newUrl = "", newType = "rss";
+    private string? feedMessage;
+    private bool testing;
+    private string? testResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        settings = await db.Settings.FirstAsync();
+        feeds = await db.Feeds.OrderBy(f => f.Name).ToListAsync();
+        dailyTime = DateTime.Today
+            + (TimeOnly.TryParse(settings.DailyDigestTime, out var t)
+                ? t.ToTimeSpan() : new TimeSpan(7, 30, 0));
+    }
+
+    private async Task SaveSettings()
+    {
+        settings!.DailyDigestTime = dailyTime.ToString("HH:mm");
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Settings.Update(settings);
+        await db.SaveChangesAsync();
+        saved = true;
+    }
+
+    private async Task SaveFeed(FeedSourceEntity feed)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Feeds.Update(feed);
+        await db.SaveChangesAsync();
+    }
+
+    private async Task DeleteFeed(FeedSourceEntity feed)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Feeds.Remove(feed);
+        await db.SaveChangesAsync();
+        feeds!.Remove(feed);
+    }
+
+    private async Task AddFeed()
+    {
+        if (string.IsNullOrWhiteSpace(newName)
+            || !Uri.TryCreate(newUrl, UriKind.Absolute, out _))
+        {
+            feedMessage = "Enter a name and a valid URL.";
+            return;
+        }
+
+        var feed = new FeedSourceEntity { Name = newName.Trim(), Url = newUrl.Trim(), Type = newType };
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.Feeds.Add(feed);
+        await db.SaveChangesAsync();
+        feeds!.Add(feed);
+
+        newName = newUrl = "";
+        feedMessage = "Added — it'll be picked up on the next collection run.";
+
+        _ = Collector.CollectAsync();
+    }
+
+    private async Task SendTest()
+    {
+        testing = true;
+        testResult = null;
+        StateHasChanged();
+
+        try
+        {
+            await Digest.SendDigestAsync(TimeSpan.FromDays(2), "test");
+            testResult = "Sent — check your inbox (and spam folder).";
+        }
+        catch (Exception ex)
+        {
+            testResult = $"Failed: {ex.Message}";
+        }
+
+        testing = false;
+    }
+}

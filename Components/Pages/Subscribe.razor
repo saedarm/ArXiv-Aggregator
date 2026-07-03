@@ -1,0 +1,47 @@
+﻿@page "/subscribe"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using PaperAggro.Data
+@using PaperAggro.Models
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<PageTitle>Subscribe</PageTitle>
+
+<h1>Get the digest</h1>
+<p>Daily and weekly digests, on the schedule set in Settings.</p>
+
+<div class="toolbar">
+    <input @bind="email" placeholder="name@example.com" />
+    <button @onclick="SubscribeAsync">Subscribe</button>
+</div>
+
+@if (message is not null)
+{
+    <p class="muted">@message</p>
+}
+
+@code {
+    private string email = "";
+    private string? message;
+
+    private async Task SubscribeAsync()
+    {
+        if (!email.Contains('@')) { message = "Enter a valid email."; return; }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        if (await db.Subscribers.AnyAsync(s => s.Email == email))
+        {
+            message = "Already subscribed.";
+            return;
+        }
+
+        db.Subscribers.Add(new Subscriber
+        {
+            Email = email,
+            SubscribedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        message = "Subscribed — first digest arrives on the next scheduled send.";
+        email = "";
+    }
+}

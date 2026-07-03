@@ -1,0 +1,41 @@
+# ── Secrets & local config ──────────────────────────
+.env
+*.env
+!.env.example
+
+# ── PaperAggro runtime data ─────────────────────────
+paperaggro.db
+paperaggro.db-shm
+paperaggro.db-wal
+papers_for_deep_dive/
+
+# ── .NET build output ───────────────────────────────
+bin/
+obj/
+*.user
+*.userosscache
+*.suo
+[Ll]og/
+[Ll]ogs/
+
+# ── Rider / JetBrains ───────────────────────────────
+.idea/
+*.sln.iml
+
+# ── Visual Studio (for forkers who use it) ──────────
+.vs/
+*.userprefs
+
+# ── VS Code (ditto) ─────────────────────────────────
+.vscode/
+!.vscode/settings.json
+!.vscode/launch.json
+
+# ── OS noise ────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Publish output ──────────────────────────────────
+publish/
+*.pubxml
