@@ -8,8 +8,7 @@ deep dive with direct PDF links, and emails you daily and weekly digests.
 The database is a file. It creates itself. There is no MongoDB, no Docker, and
 no cloud setup — that's the point.
 
-Full write-up of why this exists and what broke while building it:
-[blog post](LINK-TO-MEDIUM-POST)
+
 
 ## Quick start
 
