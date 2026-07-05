@@ -103,7 +103,7 @@ ingestion by a RAG-based paper Q&A tool.
 
 ## Docs
 
-See [docs/ARCHITECTURE.md](https://github.com/saedarm/ArXiv-Aggregator/blob/master/Architecture.md) for how it works and why
+See [ARCHITECTURE.md](https://github.com/saedarm/ArXiv-Aggregator/Architecture.md) for how it works and why
 it's built this way — including why it can't run on Azure Static Web Apps.
 
 ## Hosting note
